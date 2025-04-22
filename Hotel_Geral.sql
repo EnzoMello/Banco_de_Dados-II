@@ -229,8 +229,28 @@ AND F.NOME ILIKE 'Joaquim%'
 
 -- 19. O nome e a data de nascimento dos funcionários, além do valor de diária mais cara
 -- reservado por cada um deles.
--- 20. A quantidade de apartamentos ocupados por cada um dos hóspedes (mostrar o nome)
+SELECT F.NOME, F.DT_NASC, MAX(C.PRECO) FROM FUNCIONARIO F
+JOIN HOSPEDAGEM HO ON HO.COD_FUNC = F.COD_FUNC
+JOIN APARTAMENTO AP ON AP.NUM_AP = HO.NUM_AP
+JOIN CATEGORIA C ON C.COD_CAT = AP.COD_CAT
+GROUP BY F.NOME, F.DT_NASC
 
+
+-- 20. A quantidade de apartamentos ocupados por cada um dos hóspedes (mostrar o nome)
+SELECT H.NOME, COUNT(AP.NUM_AP) FROM HOSPEDE H
+JOIN HOSPEDAGEM HO ON HO.COD_HOSP = H.COD_HOSP
+JOIN APARTAMENTO AP ON HO.NUM_AP = AP.NUM_AP
+GROUP BY H.NOME
+
+-- 21. A relação com o nome dos hóspedes, a data de entrada, a data de saída e o valor total
+-- pago em diárias (não é necessário considerar a hora de entrada e saída, apenas as datas).
+SELECT H.NOME, HO.DT_ENT, HO.DT_SAIDA, C.PRECO * (HO.DT_SAIDA - HO.DT_ENT) FROM HOSPEDE H
+JOIN HOSPEDAGEM HO ON HO.COD_HOSP = H.COD_HOSP
+JOIN APARTAMENTO AP ON HO.NUM_AP = AP.NUM_AP
+JOIN CATEGORIA C ON C.COD_CAT = AP.COD_CAT
+
+
+-- 22. O nome dos hóspedes que já se hospedaram em todos os apartamentos do hotel.
 
 -- ****************** APRENDIZADO AULA 09/04/205 ******************
 -- ----> GROUP BY:
