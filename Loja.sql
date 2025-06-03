@@ -1,0 +1,238 @@
+CREATE TABLE CLIENTE (
+	COD_CLI SERIAL PRIMARY KEY,
+	NOME VARCHAR(30)
+);
+
+INSERT INTO CLIENTE (NOME) VALUES 
+('Enzo'),
+('Kaio'),
+('Lara'),
+('Marcos'),
+('Bianca');
+
+
+CREATE TABLE VENDA (
+	COD_VENDA SERIAL PRIMARY KEY,
+	COD_CLI INT REFERENCES CLIENTE(COD_CLI),
+	VALOR_TOTAL FLOAT,
+	DT_VENDA DATE
+	
+);
+
+-- INSERT INTO VENDA (COD_CLI, VALOR_TOTAL, DT_VENDA) VALUES 
+-- (1, 26.00, '2025-05-10'),  -- Enzo
+-- (3, 15.00, '2025-05-11'),  -- Lara
+-- (2, 12.00, '2025-05-12'),  -- Kaio
+-- (4, 18.00, '2025-05-13'),  -- Marcos
+-- (5, 24.00, '2025-05-14');  -- Bianca
+
+CREATE TABLE ITEM_VENDA (
+	COD_PROD INT REFERENCES PRODUTO(COD_PROD),
+	COD_VENDA INT REFERENCES VENDA(COD_VENDA),
+	QUANT_VENDIDA INT
+);
+-- -- Venda 1: 1 hambúrguer (2), 1 refrigerante (1)
+-- INSERT INTO ITEM_VENDA (COD_PROD, COD_VENDA, QUANT_VENDIDA) VALUES 
+-- (2, 1, 1),
+-- (1, 1, 1);
+
+-- -- Venda 2: 1 Combo Refeição (6)
+-- INSERT INTO ITEM_VENDA (COD_PROD, COD_VENDA, QUANT_VENDIDA) VALUES 
+-- (6, 2, 1);
+
+-- -- Venda 3: 1 suco (4), 1 sanduíche (5)
+-- INSERT INTO ITEM_VENDA (COD_PROD, COD_VENDA, QUANT_VENDIDA) VALUES 
+-- (4, 3, 1),
+-- (5, 3, 1);
+
+-- -- Venda 4: 2 hambúrgueres
+-- INSERT INTO ITEM_VENDA (COD_PROD, COD_VENDA, QUANT_VENDIDA) VALUES 
+-- (2, 4, 2);
+
+-- -- Venda 5: 1 Combo Light (7), 1 refrigerante (1)
+-- INSERT INTO ITEM_VENDA (COD_PROD, COD_VENDA, QUANT_VENDIDA) VALUES 
+-- (7, 5, 1),
+-- (1, 5, 1);
+
+
+CREATE TABLE PRODUTO (
+	COD_PROD SERIAL PRIMARY KEY,
+	VALOR FLOAT,
+	NOME VARCHAR(30),
+	QUANT INT,
+	COD_PROD_PAI REFERENCES PRODUTO(COD_PROD)
+);
+
+-- Produtos simples
+-- INSERT INTO PRODUTO (VALOR, NOME, QUANT) VALUES 
+-- (5.00, 'Refrigerante', 100),     -- COD_PROD = 1
+-- (7.00, 'Hambúrguer', 80),        -- COD_PROD = 2
+-- (4.00, 'Batata Frita', 60),      -- COD_PROD = 3
+-- (3.50, 'Suco Natural', 50),      -- COD_PROD = 4
+-- (6.50, 'Sanduíche Natural', 70); -- COD_PROD = 5
+
+-- -- Produto combo, que depende de produto simples (produto pai = 1 = refrigerante)
+-- INSERT INTO PRODUTO (VALOR, NOME, QUANT, COD_PROD_PAI) VALUES 
+-- (15.00, 'Combo Refeição 1', 40, 1),  -- COD_PROD = 6
+-- (12.00, 'Combo Light', 30, 4);      -- COD_PROD = 7 (pai = suco)
+
+
+CREATE TABLE COMBO (
+	COD_PROD_COMBO SERIAL PRIMARY KEY,
+	QUANT INT,
+	COD_PROD_COMP INT REFERENCES PRODUTO(COD_PROD)
+);
+
+-- -- Combo 6 (Combo Refeição 1) usa hambúrguer (2) e batata (3)
+-- INSERT INTO COMBO (QUANT, COD_PROD_COMP) VALUES 
+-- (1, 2),
+-- (1, 3);
+
+-- -- Combo 7 (Combo Light) usa sanduíche (5)
+-- INSERT INTO COMBO (QUANT, COD_PROD_COMP) VALUES 
+-- (1, 5);
+
+
+-- 1.Crie um trigger que, sempre que houver decremento da quantidade em estoque de um determinado produto, 
+-- decremente também, caso seja necessário, a quantidade em estoque dos produtos que são compostos por 
+-- aquele que foi decrementado.
+
+CREATE OR REPLACE FUNCTION TRIGGER_DECREMENTA_ESTOQUE()
+RETURNS TRIGGER AS $$
+BEGIN
+
+IF NEW.QUANT < OLD.QUANT THEN
+	UPDATE PRODUTO
+	SET QUANT = QUANT - (OLD.QUANT - NEW.QUANT)
+	WHERE COD_PROD_PAI = OLD.COD_PROD;
+	RAISE NOTICE 'Trigger TRG_DECREMENTAR_PRODUTOS computada.';
+END IF;
+
+RETURN NEW;
+END;
+$$ LANGUAGE PLPGSQL;
+
+CREATE TRIGGER TRG_DECREMENTAR_PRODUTOS
+AFTER UPDATE ON PRODUTO
+FOR EACH ROW EXECUTE PROCEDURE TRIGGER_DECREMENTA_ESTOQUE();
+
+UPDATE PRODUTO 
+SET QUANT = 98
+WHERE COD_PROD = 1;
+
+UPDATE PRODUTO
+SET QUANT = 49
+WHERE COD_PROD = 4;
+
+-- Sempre que um novo item for inserido, atualizado ou removido da ITEM_VENDA, 
+-- o VALOR_TOTAL da VENDA correspondente deve ser atualizado, 
+-- somando os valores dos produtos vendidos.
+
+CREATE OR REPLACE FUNCTION TRIGGER_VENDA()
+RETURNS TRIGGER AS $$
+BEGIN
+	UPDATE VENDA
+	SET VALOR_TOTAL = (
+	SELECT SUM(IV.QUANT_VENDA * P.VALOR) 
+	FROM ITEM_VENDA IV
+	JOIN PRODUTO P ON P.COD_PROD = IV.COD_PROD
+	WHERE IV.COD_VENDA = COALESCE(NEW.COD_VENDA, OLD.COD_VENDA)
+	)
+	WHERE COD_VENDA = COALESCE(NEW.COD_VENDA, OLD.COD_VENDA);
+
+	RETURN NULL;
+END;
+$$ LANGUAGE PLPGSQL;
+
+CREATE TRIGGER TRG_ATUALIZA_VENDA
+AFTER INSERT OR UPDATE OR DELETE ON ITEM_VENDA
+FOR EACH ROW EXECUTE PROCEDURE TRIGGER_VENDA();	
+
+-- Crie uma trigger antes de inserir ou atualizar um ITEM_VENDA 
+-- que verifique se há estoque suficiente do produto. 
+-- Se não houver, bloqueie a venda com uma mensagem.
+
+CREATE OR REPLACE FUNCTION TRIGGER_VERIFICA_ESTOQUE()
+RETURNS TRIGGER AS $$
+
+DECLARE
+	ESTOQUE_ATUAL INT;
+
+BEGIN
+SELECT QUANT INTO ESTOQUE_ATUAL
+FROM PRODUTO
+WHERE COD_PROD = NEW.COD_PROD;
+
+IF ESTOQUE_ATUAL < NEW.QUANT_VENDIDA THEN
+	RAISE EXCEPTION 'Limite do estoque foi atingido, proibido mais vendas.';
+END IF;
+
+ 
+END;
+$$ LANGUAGE PLPGSQL;
+
+
+CREATE TRIGGER TRG_VERIFICAR_ESTOQUE
+BEFORE INSERT OR UPDATE ON ITEM_VENDA
+FOR EACH ROW EXECUTE PROCEDURE TRIGGER_VERIFICA_ESTOQUE();
+
+-- Sempre que uma venda for realizada (ou seja, um INSERT em ITEM_VENDA), 
+-- decrementar o estoque (QUANT) dos produtos vendidos.
+CREATE OR REPLACE FUNCTION TRIGGER_DECREMENTA_ESTOQUE()
+RETURNS TRIGGER AS $$
+BEGIN
+
+	UPDATE PRODUTO
+	SET QUANT = QUANT - NEW.QUANT_VENDIDA
+	WHERE COD_PROD = NEW.COD_PROD;
+	
+	RAISE INFO 'Trigger computado e estoque atualizado(decrementado)';
+
+	RETURN NEW;
+END;
+$$ LANGUAGE PLPGSQL;
+
+CREATE TRIGGER TRG_DECREMENTA_ESTOQUE
+AFTER INSERT ON ITEM_VENDA
+FOR EACH ROW EXECUTE PROCEDURE TRIGGER_DECREMENTA_ESTOQUE()
+
+-- Crie uma trigger que impeça a exclusão de um produto que já tenha sido vendido.
+CREATE OR REPLACE FUNCTION TRIGGER_DECREMENTA_ESTOQUE()
+RETURNS TRIGGER AS $$
+BEGIN
+
+	IF EXISTS (
+		SELECT 1 FROM ITEM_VENDA
+		WHERE COD_PROD = OLD.COD_PROD
+	) THEN
+	RAISE EXCEPETION 'Esse produto já foi vendido';
+
+RETURN OLD;
+END;
+$$ LANGUAGE PLPGSQL;
+
+
+CREATE TRIGGER TRG_IMPEDE_VENDA()
+BEFORE DELETE ON ITEM_VENDA
+FOR EACH ROW EXECUTE PROCEDURE TRIGGER_IMPEDE_VENDA()
+
+-- Crie uma trigger que, sempre que um novo produto for inserido na tabela PRODUTO, 
+-- verifique se o campo VALOR está acima de R$ 100,00. 
+-- Se estiver, lance uma exceção impedindo o cadastro.
+CREATE OR REPLACE FUNCTION TRIGGER_CADASTRO_PRODUTO()
+RETURNS TRIGGER AS $$
+BEGIN
+
+IF NEW.VALOR > 100 THEN
+	RAISE EXCEPTION 'Produtos com valor acima de 100 não são permitidos.';
+END IF;
+
+RETURN NEW;
+END;
+$$ LANGUAGE PLPGSQL;
+
+
+
+CREATE TRIGGER TRG_CADASTRO_PRODUTO
+BEFORE INSERT ON PRODUTO
+FOR EACH ROW EXECUTE PROCEDURE TRIGGER_CADASTRO_PRODUTO();
